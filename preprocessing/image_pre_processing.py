@@ -4,14 +4,14 @@ import tensorflow as tf
 import progressbar
 import numpy as np
 import multiprocessing
-import datetime
+from itertools import repeat
 
 
-def worker_calculate_mean(files):
+def worker_calculate_mean(files, cpu):
     (R, G, B) = ([], [], [])
 
     widgets = [
-        'Calculating Mean - ',
+        'Calculating Mean - [', str(cpu), ']',
         progressbar.Bar('#', '[', ']'),
         ' [', progressbar.Percentage(), '] ',
         '[', progressbar.Counter(format='%(value)02d/%(max_value)d'), '] '
@@ -40,7 +40,7 @@ def get_mean_rgb(files):
 
     split_file_list = [files[x:x + item_per_thread] for x in range(0, len(files), item_per_thread)]
     p = multiprocessing.Pool(cpu_core)
-    results = p.map(worker_calculate_mean, split_file_list)
+    results = p.starmap(worker_calculate_mean, zip(split_file_list, list(range(cpu_core))))
     p.close()
     p.join()
 
@@ -52,13 +52,124 @@ def get_mean_rgb(files):
     return np.mean(R), np.mean(G), np.mean(B)
 
 
+def scale_image(image, size):
+    image_height, image_width = image.shape[:2]
+
+    if image_height <= image_width:
+        ratio = image_width / image_height
+        h = size
+        w = int(ratio * 256)
+
+        image = cv2.resize(image, (w, h))
+
+    else:
+        ratio = image_height / image_width
+        w = size
+        h = int(ratio * 256)
+
+        image = cv2.resize(image, (w, h))
+
+    return image
+
+
+def center_crop(image, size):
+    image_height, image_width = image.shape[:2]
+
+    if image_height <= image_width and abs(image_width - size) > 1:
+
+        dx = int((image_width - size) / 2)
+        image = image[:, dx:-dx, :]
+    elif abs(image_height - size) > 1:
+        dy = int((image_height - size) / 2)
+        image = image[dy:-dy, :, :]
+
+    image_height, image_width = image.shape[:2]
+    if image_height is not size and image_width is not size:
+        image = cv2.resize(image, (size, size))
+
+    return image
+
+
+def process_image(image, size):
+    '''
+    (B, G, R) = cv2.split(image.astype("float32"))
+    R -= self.mean_rgb["R"]
+    G -= self.mean_rgb["G"]
+    B -= self.mean_rgb["B"]
+
+    image = cv2.merge([B, G, R])
+    '''
+
+    image = scale_image(image, size)
+    image = center_crop(image, size)
+
+    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+
+    return image
+
+
+def _int64_feature(value):
+    return tf.train.Feature(int64_list=tf.train.Int64List(value=[value]))
+
+
+def _bytes_feature(value):
+    return tf.train.Feature(bytes_list=tf.train.BytesList(value=[value]))
+
+
+def worker_tf_write(files, tf_record_path, label_map, size, image_quality, number):
+    encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), image_quality]
+    tf_record_options = tf.io.TFRecordOptions(compression_type="GZIP")
+
+    widgets = [
+        'Processing Images - [', str(number), ']',
+        progressbar.Bar('#', '[', ']'),
+        ' [', progressbar.Percentage(), '] ',
+        '[', progressbar.Counter(format='%(value)02d/%(max_value)d'), '] '
+
+    ]
+
+    bar = progressbar.ProgressBar(maxval=len(files), widgets=widgets)
+    bar.start()
+
+    with tf.io.TFRecordWriter(tf_record_path,tf_record_options) as tf_writer:
+        for i, file in enumerate(files):
+            image = process_image(cv2.imread(file), size)
+            is_success, im_buf_arr = cv2.imencode(".jpg", image, encode_param)
+
+            if is_success:
+                label_str = file.split("/")[-2]
+                label_number = label_map[label_str]
+
+                image_raw = im_buf_arr.tobytes()
+                row = tf.train.Example(features=tf.train.Features(feature={
+                    'label': _int64_feature(label_number),
+                    'image_raw': _bytes_feature(image_raw)
+                }))
+
+                tf_writer.write(row.SerializeToString())
+                bar.update(i + 1)
+            else:
+                print("Error processing " + file)
+        bar.finish()
+
+
+def master_tf_write(split_file_list, tf_record_paths, size, image_quality, label_map):
+    cpu_core = multiprocessing.cpu_count()
+
+    p = multiprocessing.Pool(cpu_core)
+    results = p.starmap(worker_tf_write, zip(split_file_list, tf_record_paths, repeat(label_map), repeat(size), repeat(image_quality),
+                                             list(range(len(tf_record_paths)))))
+    p.close()
+    p.join()
+
+
 class ImagePreprocess:
 
     def __init__(self, image_folder, record_path, identifier, size=256, split_number=1000, image_quality=70):
         self.image_folder = image_folder
         self.record_path = record_path
         self.size = size
-        self.encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), image_quality]
+        self.image_quality = image_quality
         self.split_number = split_number
         self.label_map = {}
         self.tf_record_options = tf.io.TFRecordOptions(compression_type="GZIP")
@@ -67,84 +178,8 @@ class ImagePreprocess:
         self.label_sequence = 0
         self.mean_rgb = {}
 
-    def __scale_image(self, image):
-        image_height, image_width = image.shape[:2]
-
-        if image_height <= image_width:
-            ratio = image_width / image_height
-            h = self.size
-            w = int(ratio * 256)
-
-            image = cv2.resize(image, (w, h))
-
-        else:
-            ratio = image_height / image_width
-            w = self.size
-            h = int(ratio * 256)
-
-            image = cv2.resize(image, (w, h))
-
-        return image
-
-    def __center_crop(self, image):
-        image_height, image_width = image.shape[:2]
-
-        if image_height <= image_width and abs(image_width - self.size) > 1:
-
-            dx = int((image_width - self.size) / 2)
-            image = image[:, dx:-dx, :]
-        elif abs(image_height - self.size) > 1:
-            dy = int((image_height - self.size) / 2)
-            image = image[dy:-dy, :, :]
-
-        image_height, image_width = image.shape[:2]
-        if image_height is not self.size and image_width is not self.size:
-            image = cv2.resize(image, (self.size, self.size))
-
-        return image
-
-    def __process_image(self, image):
-
-        '''
-        (B, G, R) = cv2.split(image.astype("float32"))
-        R -= self.mean_rgb["R"]
-        G -= self.mean_rgb["G"]
-        B -= self.mean_rgb["B"]
-
-        image = cv2.merge([B, G, R])
-        '''
-
-        image = self.__scale_image(image)
-        image = self.__center_crop(image)
-
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-
-        return image
-
-    def __get_mean_rgb(self, files, stop_at):
-        startTime = datetime.datetime.now().replace(microsecond=0)
-        self.mean_rgb["R"], self.mean_rgb["G"], self.mean_rgb["B"] = get_mean_rgb(files[:stop_at])
-        endTime = datetime.datetime.now().replace(microsecond=0)
-        print(datetime.time(0, 0, (endTime - startTime).seconds).strftime("%M:%S"))
-
-    def __int64_feature(self, value):
-        return tf.train.Feature(int64_list=tf.train.Int64List(value=[value]))
-
-    def __bytes_feature(self, value):
-        return tf.train.Feature(bytes_list=tf.train.BytesList(value=[value]))
-
-    def __get_label_number(self, label_str):
-        if label_str in self.label_map:
-            return self.label_map[label_str]
-        else:
-            self.label_map[label_str] = self.label_sequence
-            self.label_sequence += 1
-            return self.label_map[label_str]
-
     def create_tf_record(self):
         files = glob.glob(self.image_folder)
-
-        tf_writer = tf.io.TFRecordWriter(self.record_path + self.identifier + "-0.tfrecord", self.tf_record_options)
 
         data_len = len(files)
         if data_len / self.split_number is not 0:
@@ -152,52 +187,25 @@ class ImagePreprocess:
         else:
             stop_at = data_len
 
-        self.__get_mean_rgb(files, stop_at)
+        files = files[:stop_at]
 
-        widgets = [
-            'Processing Images - ',
-            progressbar.Bar('#', '[', ']'),
-            ' [', progressbar.Percentage(), '] ',
-            '[', progressbar.Counter(format='%(value)02d/%(max_value)d'), '] '
+        self.mean_rgb["R"], self.mean_rgb["G"], self.mean_rgb["B"] = get_mean_rgb(files)
 
-        ]
+        split_file_list = [files[x:x + self.split_number] for x in range(0, len(files), self.split_number)]
 
-        bar = progressbar.ProgressBar(maxval=stop_at, widgets=widgets)
-        bar.start()
+        tf_record_paths = []
 
-        for i, file in enumerate(files):
+        for i in range(len(split_file_list)):
+            tf_record_paths.append(self.record_path + self.identifier + "-" + str(i) + ".tfrecord")
 
-            if i < stop_at:
-                image = self.__process_image(cv2.imread(file))
-                is_success, im_buf_arr = cv2.imencode(".jpg", image, self.encode_param)
-                if is_success:
+        label_map = {
+            "cat": 0,
+            "dog": 1
+        }
 
-                    label_str = file.split("/")[-2]
-                    label_number = self.__get_label_number(label_str)
+        master_tf_write(split_file_list, tf_record_paths, self.size, self.image_quality, label_map)
 
-                    image_raw = im_buf_arr.tobytes()
-
-                    row = tf.train.Example(features=tf.train.Features(feature={
-                        'label': self.__int64_feature(label_number),
-                        'image_raw': self.__bytes_feature(image_raw)
-                    }))
-
-                    if i % self.split_number == 0:
-                        seq = int(i / self.split_number)
-                        tf_writer.close()
-                        tf_writer = tf.io.TFRecordWriter(self.record_path + self.identifier + "-" + str(seq) + ".tfrecord", self.tf_record_options)
-
-                    tf_writer.write(row.SerializeToString())
-                    bar.update(i + 1)
-                else:
-                    print("Error processing " + file)
-            else:
-                break
-
-        tf_writer.close()
-        bar.finish()
-
-        return self.label_map, self.mean_rgb
+        return self.mean_rgb
 
 
 if __name__ == '__main__':
