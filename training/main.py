@@ -22,12 +22,13 @@ def parse_image(record):
 
 
 dataset = dataset.map(parse_image, num_parallel_calls=tf.data.experimental.AUTOTUNE) \
-    .map(lambda image, label: (tf.image.random_flip_left_right(image), label)) \
+    .map(lambda image, label: (tf.image.random_flip_up_down(image), label), num_parallel_calls=tf.data.experimental.AUTOTUNE) \
     .shuffle(buffer_size=1000) \
     .repeat() \
     .batch(2) \
     .prefetch(tf.data.experimental.AUTOTUNE)
 
 for image, label in dataset.take(1):
-    cv2.imwrite("test.jpg", (tf.squeeze(image[0, :, :, :])).numpy())
+    cv2.imwrite("test0.jpg", (tf.squeeze(image[0, :, :, :])).numpy())
+    cv2.imwrite("test1.jpg", (tf.squeeze(image[1, :, :, :])).numpy())
     print(label)
