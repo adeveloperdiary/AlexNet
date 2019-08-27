@@ -5,6 +5,8 @@ import progressbar
 import numpy as np
 import multiprocessing
 from itertools import repeat
+import json
+import random
 
 
 def worker_calculate_mean(files, cpu):
@@ -84,7 +86,7 @@ def center_crop(image, size):
         image = image[dy:-dy, :, :]
 
     image_height, image_width = image.shape[:2]
-    if image_height is not size and image_width is not size:
+    if image_height is not size or image_width is not size:
         image = cv2.resize(image, (size, size))
 
     return image
@@ -131,7 +133,7 @@ def worker_tf_write(files, tf_record_path, label_map, size, image_quality, numbe
     bar = progressbar.ProgressBar(maxval=len(files), widgets=widgets)
     bar.start()
 
-    with tf.io.TFRecordWriter(tf_record_path,tf_record_options) as tf_writer:
+    with tf.io.TFRecordWriter(tf_record_path, tf_record_options) as tf_writer:
         for i, file in enumerate(files):
             image = process_image(cv2.imread(file), size)
             is_success, im_buf_arr = cv2.imencode(".jpg", image, encode_param)
@@ -165,7 +167,7 @@ def master_tf_write(split_file_list, tf_record_paths, size, image_quality, label
 
 class ImagePreprocess:
 
-    def __init__(self, image_folder, record_path, identifier, size=256, split_number=1000, image_quality=70):
+    def __init__(self, image_folder, record_path, identifier, label_map, cal_rgb_mean=False, size=256, split_number=1000, image_quality=70):
         self.image_folder = image_folder
         self.record_path = record_path
         self.size = size
@@ -177,9 +179,13 @@ class ImagePreprocess:
         self.identifier = identifier
         self.label_sequence = 0
         self.mean_rgb = {}
+        self.cal_rgb_mean = cal_rgb_mean
+        self.label_map = label_map
 
     def create_tf_record(self):
         files = glob.glob(self.image_folder)
+
+        random.shuffle(files)
 
         data_len = len(files)
         if data_len / self.split_number is not 0:
@@ -189,7 +195,8 @@ class ImagePreprocess:
 
         files = files[:stop_at]
 
-        self.mean_rgb["R"], self.mean_rgb["G"], self.mean_rgb["B"] = get_mean_rgb(files)
+        if self.cal_rgb_mean:
+            self.mean_rgb["R"], self.mean_rgb["G"], self.mean_rgb["B"] = get_mean_rgb(files)
 
         split_file_list = [files[x:x + self.split_number] for x in range(0, len(files), self.split_number)]
 
@@ -198,17 +205,26 @@ class ImagePreprocess:
         for i in range(len(split_file_list)):
             tf_record_paths.append(self.record_path + self.identifier + "-" + str(i) + ".tfrecord")
 
-        label_map = {
-            "cat": 0,
-            "dog": 1
-        }
-
-        master_tf_write(split_file_list, tf_record_paths, self.size, self.image_quality, label_map)
-
-        return self.mean_rgb
+        master_tf_write(split_file_list, tf_record_paths, self.size, self.image_quality, self.label_map)
 
 
 if __name__ == '__main__':
-    pre_process = ImagePreprocess(image_folder="/media/4TB/datasets/cats_vs_dogs/train/**/*.jpg",
-                                  record_path="/media/4TB/datasets/cats_vs_dogs/tf_record/train/", identifier="train")
-    print(pre_process.create_tf_record())
+    label_map = {
+        "cat": 0,
+        "dog": 1
+    }
+
+    train_pre_process = ImagePreprocess(image_folder="/media/4TB/datasets/cats_vs_dogs/train/**/*.jpg",
+                                        record_path="/media/4TB/datasets/cats_vs_dogs/pre_processed_data/train/", identifier="train",
+                                        label_map=label_map,
+                                        cal_rgb_mean=True)
+    train_pre_process.create_tf_record()
+
+    with open("rgb.json", "w+") as f:
+        f.write(json.dumps({"R": train_pre_process.mean_rgb["R"], "G": train_pre_process.mean_rgb["G"], "B": train_pre_process.mean_rgb["B"]}))
+
+    val_pre_process = ImagePreprocess(image_folder="/media/4TB/datasets/cats_vs_dogs/val/**/*.jpg",
+                                      record_path="/media/4TB/datasets/cats_vs_dogs/pre_processed_data/val/", identifier="val", label_map=label_map,
+                                      split_number=1000,
+                                      cal_rgb_mean=False)
+    val_pre_process.create_tf_record()
