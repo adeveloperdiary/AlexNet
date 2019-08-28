@@ -5,6 +5,7 @@ import os
 MAP_CLASS_LOC = "/media/4TB/datasets/ILSVRC2015/ILSVRC2015/devkit/data/map_clsloc.txt"
 
 class_dir_map = {}
+id_class_map = {}
 
 with open(MAP_CLASS_LOC, "rb") as map_class_file:
     rows = map_class_file.readlines()
@@ -12,6 +13,7 @@ with open(MAP_CLASS_LOC, "rb") as map_class_file:
         row = row.strip()
         arr = row.decode("utf-8").split(" ")
         class_dir_map[arr[0]] = arr[2]
+        id_class_map[int(arr[1])] = arr[2]
 
 TRAIN_DATA_FOLDER = "/media/4TB/datasets/ILSVRC2015/ILSVRC2015/Data/CLS-LOC/train/"
 
@@ -49,3 +51,39 @@ for testPath, testLabel in zip(testPaths, testLabels):
     os.rename(testPath, TEST_DATA_FOLDER + testLabel + "/" + testPath.split("/")[-1])
 
 # ----------------- Create val folders --------------------
+
+BLACK_LIST = "/media/4TB/datasets/ILSVRC2015/ILSVRC2015/devkit/data/ILSVRC2015_clsloc_validation_blacklist.txt"
+VAL_CLASS_PATH = "/media/4TB/datasets/ILSVRC2015/ILSVRC2015/devkit/data/ILSVRC2015_clsloc_validation_ground_truth.txt"
+
+VAL_DATA_PATH = "/media/4TB/datasets/ILSVRC2015/ILSVRC2015/Data/CLS-LOC/val/"
+
+VAL_ORI_DATA_PATH = "/media/4TB/datasets/ILSVRC2015/ILSVRC2015/Data/CLS-LOC/val_original/*.JPEG"
+
+black_list = []
+
+with open(BLACK_LIST) as b_file:
+    rows = b_file.readlines()
+    for row in rows:
+        row = int(row.strip())
+        black_list.append(row)
+
+val_class = []
+
+with open(VAL_CLASS_PATH) as val_file:
+    rows = val_file.readlines()
+    for row in rows:
+        row = int(row.strip())
+        val_class.append(row)
+
+val_files = glob.glob(VAL_ORI_DATA_PATH)
+
+for file in val_files:
+    seq_num = int(file.split("/")[-1].split("_")[-1].split(".")[0])
+    if seq_num not in black_list:
+        class_id = val_class[seq_num - 1]
+        class_name = id_class_map[class_id]
+
+        if not os.path.isdir(VAL_DATA_PATH + class_name):
+            os.mkdir(VAL_DATA_PATH + class_name)
+
+        os.rename(file, VAL_DATA_PATH + class_name + "/" + file.split("/")[-1])
