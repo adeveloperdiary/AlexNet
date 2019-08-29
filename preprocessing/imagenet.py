@@ -1,5 +1,3 @@
-import numpy as np
-import cv2
 import os
 
 MAP_CLASS_LOC = "/media/4TB/datasets/ILSVRC2015/ILSVRC2015/devkit/data/map_clsloc.txt"
@@ -87,3 +85,16 @@ for file in val_files:
             os.mkdir(VAL_DATA_PATH + class_name)
 
         os.rename(file, VAL_DATA_PATH + class_name + "/" + file.split("/")[-1])
+
+# --------------------------- Create Label Map -------------------------------------
+
+import json
+
+label_map = {}
+
+dirs = glob.glob(TRAIN_DATA_FOLDER + "*")
+for i, dir in enumerate(dirs):
+    label_map[dir.split("/")[-1]] = i
+
+with open("label_map.json", "w") as file:
+    file.write(json.dumps(label_map))

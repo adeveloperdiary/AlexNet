@@ -42,7 +42,7 @@ def get_mean_rgb(files):
 
     split_file_list = [files[x:x + item_per_thread] for x in range(0, len(files), item_per_thread)]
     p = multiprocessing.Pool(cpu_core)
-    results = p.starmap(worker_calculate_mean, zip(split_file_list, list(range(cpu_core))))
+    results = p.starmap(worker_calculate_mean, zip(split_file_list, list(range(len(split_file_list)))))
     p.close()
     p.join()
 
@@ -140,6 +140,7 @@ def worker_tf_write(files, tf_record_path, label_map, size, image_quality, numbe
 
             if is_success:
                 label_str = file.split("/")[-2]
+
                 label_number = label_map[label_str]
 
                 image_raw = im_buf_arr.tobytes()
@@ -156,7 +157,7 @@ def worker_tf_write(files, tf_record_path, label_map, size, image_quality, numbe
 
 
 def master_tf_write(split_file_list, tf_record_paths, size, image_quality, label_map):
-    cpu_core = multiprocessing.cpu_count()
+    cpu_core = int(multiprocessing.cpu_count()/2)
 
     p = multiprocessing.Pool(cpu_core)
     results = p.starmap(worker_tf_write, zip(split_file_list, tf_record_paths, repeat(label_map), repeat(size), repeat(image_quality),
@@ -173,11 +174,9 @@ class ImagePreprocess:
         self.size = size
         self.image_quality = image_quality
         self.split_number = split_number
-        self.label_map = {}
         self.tf_record_options = tf.io.TFRecordOptions(compression_type="GZIP")
         # identifier=train/test/val
         self.identifier = identifier
-        self.label_sequence = 0
         self.mean_rgb = {}
         self.cal_rgb_mean = cal_rgb_mean
         self.label_map = label_map
@@ -209,22 +208,32 @@ class ImagePreprocess:
 
 
 if __name__ == '__main__':
-    label_map = {
-        "cat": 0,
-        "dog": 1
-    }
+    with open("label_map.json", "rb") as file:
+        label_map = json.loads(file.read())
 
-    train_pre_process = ImagePreprocess(image_folder="/media/4TB/datasets/cats_vs_dogs/train/**/*.jpg",
-                                        record_path="/media/4TB/datasets/cats_vs_dogs/pre_processed_data/train/", identifier="train",
-                                        label_map=label_map,
-                                        cal_rgb_mean=True)
-    train_pre_process.create_tf_record()
-
-    with open("rgb.json", "w+") as f:
+    '''
+    with open("imagenet_rgb.json", "w+") as f:
         f.write(json.dumps({"R": train_pre_process.mean_rgb["R"], "G": train_pre_process.mean_rgb["G"], "B": train_pre_process.mean_rgb["B"]}))
+    '''
 
-    val_pre_process = ImagePreprocess(image_folder="/media/4TB/datasets/cats_vs_dogs/val/**/*.jpg",
-                                      record_path="/media/4TB/datasets/cats_vs_dogs/pre_processed_data/val/", identifier="val", label_map=label_map,
+    '''
+    val_pre_process = ImagePreprocess(image_folder="/media/4TB/datasets/ILSVRC2015/ILSVRC2015/Data/CLS-LOC/val/**/*.JPEG",
+                                      record_path="/media/4TB/datasets/ILSVRC2015/ILSVRC2015/tf_records/val/", identifier="val",
+                                      label_map=label_map,
                                       split_number=1000,
                                       cal_rgb_mean=False)
     val_pre_process.create_tf_record()
+
+    test_pre_process = ImagePreprocess(image_folder="/media/4TB/datasets/ILSVRC2015/ILSVRC2015/Data/CLS-LOC/test/**/*.JPEG",
+                                       record_path="/media/4TB/datasets/ILSVRC2015/ILSVRC2015/tf_records/test/", identifier="test",
+                                       label_map=label_map,
+                                       split_number=1000,
+                                       cal_rgb_mean=False)
+    test_pre_process.create_tf_record()
+    '''
+
+    train_pre_process = ImagePreprocess(image_folder="/media/4TB/datasets/ILSVRC2015/ILSVRC2015/Data/CLS-LOC/train/**/*.JPEG",
+                                        record_path="/media/4TB/datasets/ILSVRC2015/ILSVRC2015/tf_records/train/", identifier="train",
+                                        label_map=label_map,
+                                        cal_rgb_mean=False)
+    train_pre_process.create_tf_record()
