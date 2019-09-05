@@ -13,7 +13,7 @@ with open(MAP_CLASS_LOC, "rb") as map_class_file:
         class_dir_map[arr[0]] = arr[2]
         id_class_map[int(arr[1])] = arr[2]
 
-TRAIN_DATA_FOLDER = "/media/4TB/datasets/ILSVRC2015/ILSVRC2015/Data/CLS-LOC/train/"
+TRAIN_DATA_FOLDER = "/media/4TB/datasets/ILSVRC2015/ILSVRC2015/Data/CLS-LOC_100/train/"
 
 # ----------------- Rename Train Dir --------------------
 
@@ -89,6 +89,7 @@ for file in val_files:
 # --------------------------- Create Label Map -------------------------------------
 
 import json
+import glob
 
 label_map = {}
 
@@ -96,5 +97,5 @@ dirs = glob.glob(TRAIN_DATA_FOLDER + "*")
 for i, dir in enumerate(dirs):
     label_map[dir.split("/")[-1]] = i
 
-with open("label_map.json", "w") as file:
+with open("label_map_100.json", "w") as file:
     file.write(json.dumps(label_map))
