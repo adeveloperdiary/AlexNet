@@ -86,6 +86,7 @@ def scheduler(epoch):
 
 log_dir = "logs/fit/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=log_dir)
+lr_callback = tf.keras.callbacks.LearningRateScheduler(scheduler)
 
 optimizer = tf.keras.optimizers.SGD(learning_rate=0.04, momentum=0.9, decay=0.0005)
 
@@ -93,11 +94,10 @@ mirrored_strategy = tf.distribute.MirroredStrategy()
 with mirrored_strategy.scope():
     model = AlexNetModel(159)
 
-    callback = tf.keras.callbacks.LearningRateScheduler(scheduler)
-
     model.compile(loss="sparse_categorical_crossentropy", optimizer=optimizer, metrices=["accuracy"])
 
-    history = model.fit(train_dataset, epochs=2, steps_per_epoch=191, validation_data=val_dataset, validation_steps=7)
+    history = model.fit(train_dataset, epochs=2, steps_per_epoch=191, validation_data=val_dataset, validation_steps=7,
+                        callbacks=[tensorboard_callback, lr_callback])
 
     # model.save("model_159_1.h5")
 

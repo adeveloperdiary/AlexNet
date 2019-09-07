@@ -1,0 +1,15 @@
+{
+  "label_map": "label_map_100.json",
+  "split_number": 6000,
+  "image_folder": "/media/4TB/datasets/ILSVRC2015/ILSVRC2015/Data/CLS-LOC_100/",
+  "record_path": "/media/4TB/datasets/ILSVRC2015/ILSVRC2015/tf_records_159/",
+  "image_type": "JPEG",
+  "crop_size": 256,
+  "image_quality": 90,
+  "tf_record_compression": "GZIP",
+  "batch": [
+    "val",
+    "test",
+    "train"
+  ]
+}

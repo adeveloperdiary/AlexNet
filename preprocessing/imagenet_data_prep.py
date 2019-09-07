@@ -99,3 +99,4 @@ for i, dir in enumerate(dirs):
 
 with open("label_map_100.json", "w") as file:
     file.write(json.dumps(label_map))
+

@@ -96,7 +96,7 @@ def get_mean_rgb(image_dir, output_file, useTFRecord=False):
 
 if __name__ == '__main__':
     ap = argparse.ArgumentParser()
-    ap.add_argument("-i", "--image_dir", required=True, help="path to the input image dir")
+    ap.add_argument("-i", "--image_dir", required=True, help="path to the input image dir. e.g. /home/Dataset/train/**/*.jpg", )
     ap.add_argument("-o", "--output_file_name", required=True, help="path to the json output")
     ap.add_argument("-tf", "--use_tfrecord", required=False, type=bool, default=False, help="path to the json output")
     args = vars(ap.parse_args())
